@@ -1,0 +1,132 @@
+---
+title: "How to make a gif"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(reshape2)
+library(readxl)
+```
+
+Data was shared by professors Michael Thrasher and Colin Rallings and it was cleaned in Open Refine. It contains local elections results since 1973 for every local authority in the UK. 
+
+```{r}
+datalocal = read.csv("historiclocalcouncilsCLEAN2.csv")
+
+```
+
+```{r}
+colnames(datalocal)
+datalocal %>% head()
+```
+
+
+# Producing the map
+
+```{r message=FALSE, warning=FALSE}
+library(maps)
+library(mapdata)
+library(maptools)
+library(rgdal)
+library(ggmap)
+library(ggplot2)
+library(rgeos)
+library(broom)
+library(plyr)
+library(gganimate)
+```
+
+
+For the purpose of [this story](https://news.sky.com/story/local-elections-see-how-your-area-has-voted-over-the-past-40-years-11707933), I only visualised results in England and Wales and not the whole UK. 
+
+The main problem visualising historic election data in the UK has to do with boundaries changes. To deal with this, I decided to subset the data from 1995 onwards, so as to have only few local authorities with no data for past years. To avoid white gaps in the map, I set the parameter that I am visualising to NOC (as advised by professors) when boundary changes make it impossible to track change in control. 
+
+```{r}
+#load shapefile previously downloaded from the ONS geoportal.
+shapefile = readOGR(dsn= "Local_Authority_Districts_December_2017_Full_Clipped_Boundaries_in_Great_Britain.shp")
+```
+
+
+
+```{r message=FALSE, warning=FALSE}
+#Reshape for ggplot2 using the Broom package
+mapdata <- tidy(shapefile, region="lad17nm")
+```
+
+
+```{r}
+#filtering out Scotland
+csv = read.csv("Local_Authority_Districts_December_2017_Super_Generalised_Clipped_Boundaries_in_United_Kingdom_WGS84.csv")
+
+noscot = csv %>% filter(grepl("S",lad17cd)) %>% select(lad17nm) %>% pull()
+```
+
+
+```{r}
+mapdata = mapdata %>% filter(!id %in% noscot)
+```
+
+
+
+
+
+```{r}
+mapdata = mapdata %>% mutate(id = gsub(c(", City of|, of|County |, County of|, Council| City|City of "), "", id)) %>% mutate(id=gsub(" and "," & ", id))
+
+colnames(mapdata)[7]="Name_First_Capital"
+mapdata$Name_First_Capital = toupper(mapdata$Name_First_Capital)
+datalocal$Name_First_Capital = toupper(datalocal$Name_First_Capital)
+```
+
+
+
+```{r}
+join(mapdata, datalocal %>% select(Name_First_Capital,year,ctl) %>% filter(year==2018), by="Name_First_Capital") %>% filter(is.na(ctl)) %>% distinct(Name_First_Capital)
+```
+
+
+
+```{r}
+map=ggplot() + geom_polygon(data = join(mapdata, datalocal %>% select(Name_First_Capital,year,ctl) %>% filter(year >1994), by="Name_First_Capital") %>% mutate(ctl = ifelse(is.na(ctl),"NOC",as.character(ctl))), aes(x = long, y = lat, group = group,fill=ctl),color="#ffffff", size = 0.001)+ coord_fixed(1)+scale_fill_manual(values=c("#1465B6", "#C0C0C0","#C40813","#F7B229","#4A4A4A","#17A454","#A10BBD"), name=NULL,breaks=c("Con","Lab","LD","PC","Ind","NOC"))+labs(title = "How England and Wales changed",subtitle =  "Year: {current_frame}", x=NULL, y=NULL)+
+  theme_void()+
+  theme(legend.position = "bottom", legend.direction = "horizontal",legend.text=element_text(size=18),legend.key.size = unit(.8, "cm"), plot.title=element_text(size = 36),plot.subtitle=element_text(size = 38,face = "bold"))
+#ggsave("test1.png")
+```
+
+# Producing the gif
+
+
+```{r message=TRUE, warning=FALSE}
+library(gifski)
+library(transformr)
+library(magick)
+```
+
+Using gganimate I produced the gif to promote the story. 
+
+
+```{r}
+
+mapanim=map + transition_manual((year))+
+  enter_fade() +
+  exit_fade()
+
+```
+
+
+```{r message=FALSE, warning=FALSE}
+forgif = animate(mapanim, width=1000, height=1000, duration = 20)
+```
+```{r}
+forgif
+#anim_save("testgif7.gif", forgif)
+```
+
+
+
